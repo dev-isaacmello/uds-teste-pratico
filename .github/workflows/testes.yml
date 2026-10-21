@@ -1,0 +1,22 @@
+name: testes
+
+on: [push, pull_request]
+
+jobs:
+  testes:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt
+      - run: ruff check . && ruff format --check .
+        if: runner.os == 'Linux'
+      - run: pytest
+      - run: python exercicio-1/simulacao.py
+      - run: python exercicio-3/evals/run_evals.py --resumir exercicio-3/evals/resultados/20261021-142806-rejulgado
