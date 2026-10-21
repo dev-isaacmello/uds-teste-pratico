@@ -1,0 +1,15 @@
+# Ambiente para rodar testes, simulação e eval. Python 3.10 ou mais novo (testado do 3.10 ao 3.15).
+# O pacote da Lambda (exercício 1) só precisa do boto3: a versão fica fixada aqui porque a
+# que vem no runtime da Lambda muda conforme a região e a data.
+
+# exercício 1
+boto3==1.43.116
+
+# exercício 3 (eval)
+anthropic==2.0.0
+pydantic==2.14.1
+PyYAML==6.0.3
+
+# desenvolvimento
+pytest==9.1.1
+ruff==0.17.1

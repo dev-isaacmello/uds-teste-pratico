@@ -1,0 +1,20 @@
+# Só configuração de ferramentas. As dependências ficam em requirements.txt, como o
+# enunciado pede.
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+# O código do enunciado fica como veio, para comparação.
+extend-exclude = ["exercicio-1/codigo_original.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["codigo_corrigido", "codigo_original"]
+
+[tool.pytest.ini_options]
+testpaths = ["exercicio-1/tests", "exercicio-3/evals/tests"]
+pythonpath = ["exercicio-1", "exercicio-3/evals"]
+addopts = "-q"
