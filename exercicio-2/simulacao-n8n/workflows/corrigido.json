@@ -1,0 +1,178 @@
+{
+  "id": "dlqCorrigido0001",
+  "name": "Reprocessar DLQ (corrigido)",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "n2",
+      "name": "Receber da DLQ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "http://sqs:9324/",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Amz-Target", "value": "AmazonSQS.ReceiveMessage" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/x-amz-json-1.0",
+        "body": "{\"QueueUrl\": \"http://sqs:9324/000000000000/chat-dlq\", \"MaxNumberOfMessages\": 10, \"WaitTimeSeconds\": 1, \"VisibilityTimeout\": 20}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Separar mensagens",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "parameters": { "fieldToSplitOut": "Messages", "options": {} }
+    },
+    {
+      "id": "n4",
+      "name": "Ler corpo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// O Body da mensagem do SQS é texto: precisa virar objeto antes de ser validado.\nlet corpo = null;\ntry {\n  corpo = JSON.parse($json.Body);\n} catch (erro) {}\nreturn { json: { ...$json, corpo } };"
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Mensagem válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, 0],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.corpo?.session_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n6",
+      "name": "POST /reprocess",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, -100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://reprocess:8080/reprocess",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Idempotency-Key", "value": "={{ $json.MessageId }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.corpo) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Apagar da DLQ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, -100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://sqs:9324/",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Amz-Target", "value": "AmazonSQS.DeleteMessage" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/x-amz-json-1.0",
+        "body": "={{ JSON.stringify({ QueueUrl: 'http://sqs:9324/000000000000/chat-dlq', ReceiptHandle: $('Ler corpo').item.json.ReceiptHandle }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Mover para quarentena",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://sqs:9324/",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Amz-Target", "value": "AmazonSQS.SendMessage" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/x-amz-json-1.0",
+        "body": "={{ JSON.stringify({ QueueUrl: 'http://sqs:9324/000000000000/chat-quarentena', MessageBody: $json.Body }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Apagar inválida da DLQ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://sqs:9324/",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Amz-Target", "value": "AmazonSQS.DeleteMessage" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/x-amz-json-1.0",
+        "body": "={{ JSON.stringify({ QueueUrl: 'http://sqs:9324/000000000000/chat-dlq', ReceiptHandle: $('Ler corpo').item.json.ReceiptHandle }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Conferência",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Roda depois do ramo principal (ordem de execução v1) e transforma o silêncio em falha:\n// se nem tudo o que foi recebido saiu da DLQ, a execução falha e dispara o Error Workflow.\nconst contar = (no) => ($(no).isExecuted ? $(no).all().filter((i) => !i.json.error && !i.json.__type).length : 0);\nconst resumo = {\n  recebidas: contar('Separar mensagens'),\n  reprocessadas: contar('POST /reprocess'),\n  quarentena: contar('Mover para quarentena'),\n  apagadas: contar('Apagar da DLQ') + contar('Apagar inválida da DLQ'),\n};\nif (resumo.apagadas !== resumo.recebidas) {\n  throw new Error(`Conferência: ${JSON.stringify(resumo)}`);\n}\nreturn [{ json: resumo }];"
+      }
+    }
+  ],
+  "connections": {
+    "Agendamento": { "main": [[{ "node": "Receber da DLQ", "type": "main", "index": 0 }]] },
+    "Receber da DLQ": {
+      "main": [
+        [
+          { "node": "Separar mensagens", "type": "main", "index": 0 },
+          { "node": "Conferência", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Separar mensagens": { "main": [[{ "node": "Ler corpo", "type": "main", "index": 0 }]] },
+    "Ler corpo": { "main": [[{ "node": "Mensagem válida?", "type": "main", "index": 0 }]] },
+    "Mensagem válida?": {
+      "main": [
+        [{ "node": "POST /reprocess", "type": "main", "index": 0 }],
+        [{ "node": "Mover para quarentena", "type": "main", "index": 0 }]
+      ]
+    },
+    "POST /reprocess": { "main": [[{ "node": "Apagar da DLQ", "type": "main", "index": 0 }]] },
+    "Mover para quarentena": { "main": [[{ "node": "Apagar inválida da DLQ", "type": "main", "index": 0 }]] }
+  }
+}

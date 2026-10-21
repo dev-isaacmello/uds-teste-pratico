@@ -1,0 +1,26 @@
+# Reprodução local do reprocessamento da DLQ: n8n, um SQS local (ElasticMQ) e um
+# /reprocess falso. Não precisa subir à mão: o reproduzir.py sobe, roda e mostra o resultado.
+name: dlq-n8n
+
+services:
+  sqs:
+    image: softwaremill/elasticmq-native@sha256:e4580ab9ad1bd5cd37b4ba04911bc5ccc8cd2d9ab4de56ece65acee71c24e05c
+    volumes:
+      - ./elasticmq.conf:/opt/elasticmq.conf:ro
+    ports:
+      - "127.0.0.1:19324:9324"
+
+  reprocess:
+    image: python:3.13-alpine
+    command: ["python", "-u", "/app/reprocess_server.py"]
+    volumes:
+      - ./reprocess_server.py:/app/reprocess_server.py:ro
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  n8n:
+    image: n8nio/n8n:2.44.5
+    # Só o CLI do n8n é usado (import:workflow e execute); o editor não precisa subir.
+    entrypoint: ["sleep", "infinity"]
+    environment:
+      N8N_DIAGNOSTICS_ENABLED: "false"

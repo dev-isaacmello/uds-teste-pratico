@@ -1,0 +1,105 @@
+{
+  "id": "dlqOriginal00001",
+  "name": "Reprocessar DLQ (como está)",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "o1",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "o2",
+      "name": "Receber da DLQ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "http://sqs:9324/",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Amz-Target", "value": "AmazonSQS.ReceiveMessage" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/x-amz-json-1.0",
+        "body": "{\"QueueUrl\": \"http://sqs:9324/000000000000/chat-dlq\"}",
+        "options": {}
+      }
+    },
+    {
+      "id": "o3",
+      "name": "Separar mensagens",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "parameters": { "fieldToSplitOut": "Messages", "options": {} }
+    },
+    {
+      "id": "o4",
+      "name": "Mensagem válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [660, 0],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.Body.session_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "o5",
+      "name": "POST /reprocess",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, -100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://reprocess:8080/reprocess",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.Body }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "o6",
+      "name": "Apagar da DLQ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, -100],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "http://sqs:9324/",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Amz-Target", "value": "AmazonSQS.DeleteMessage" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/x-amz-json-1.0",
+        "body": "={{ JSON.stringify({ QueueUrl: 'http://sqs:9324/000000000000/chat-dlq', ReceiptHandle: $json.ReceiptHandle }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Agendamento": { "main": [[{ "node": "Receber da DLQ", "type": "main", "index": 0 }]] },
+    "Receber da DLQ": { "main": [[{ "node": "Separar mensagens", "type": "main", "index": 0 }]] },
+    "Separar mensagens": { "main": [[{ "node": "Mensagem válida?", "type": "main", "index": 0 }]] },
+    "Mensagem válida?": { "main": [[{ "node": "POST /reprocess", "type": "main", "index": 0 }], []] },
+    "POST /reprocess": { "main": [[{ "node": "Apagar da DLQ", "type": "main", "index": 0 }]] }
+  }
+}
